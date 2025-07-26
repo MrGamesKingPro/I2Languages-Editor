@@ -3,7 +3,7 @@ The **I2Languages Editor** is a graphical user interface (GUI) application desig
 
 ## Download tool
 
-.
+[I2Languages-Editor](https://github.com/MrGamesKingPro/I2Languages-Editor/releases/tag/I2Languages-Editor)
 
 <img width="1101" height="753" alt="Screenshot_2025-07-26_18-54-34" src="https://github.com/user-attachments/assets/adf4afd4-83c7-4ee8-a4b9-09f41fdbb4c2" />
 
