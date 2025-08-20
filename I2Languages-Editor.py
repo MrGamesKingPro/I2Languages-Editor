@@ -6,35 +6,40 @@ import json
 import tkinterdnd2
 import re
 
-class I2Editor(tkinterdnd2.Tk):
+# We inherit from tkinterdnd2.TkinterDnD.Tk for the most reliable drag-and-drop functionality.
+class I2Editor(tkinterdnd2.TkinterDnD.Tk):
     def __init__(self):
         super().__init__()
         
-        # Main window settings
+        # --- Main window settings ---
         self.title("I2Languages Editor By MrGamesKingPro")
         self.geometry("1100x700")
 
-        self.data = None
-        self.current_filepath = None
-        self.term_to_tree_item = {} 
-        self.term_to_original_index = {}
-        self.terms_list_ref = None 
+        # --- Application state variables ---
+        self.data = None  # Holds the entire loaded JSON data structure.
+        self.current_filepath = None  # Stores the path to the currently open file.
+        self.term_to_tree_item = {}  # A dictionary to quickly find a treeview item by its term key.
+        self.term_to_original_index = {} # Maps a term key to its original index in the JSON array.
+        self.terms_list_ref = None  # A direct reference to the list of terms in the loaded JSON.
         
-        # Variable to store the key of the term currently being edited
+        # Variable to store the key of the term currently being edited in the Text widget.
         self.currently_editing_term_key = None
         
+        # List of language names detected from the file.
         self.language_names = []
+        # The index of the language we guess is English, for user convenience.
         self.detected_english_index = None
 
-        # Create the user interface
+        # --- Build the user interface ---
         self._create_widgets()
         
-        # Register the window as a drop target for files
+        # Register the main window as a drop target for files.
+        # This allows the on_drop function to be called when a file is dropped onto the window.
         self.drop_target_register('DND_FILES')
         self.dnd_bind('<<Drop>>', self.on_drop)
 
     def _create_widgets(self):
-        # --- Top Menu ---
+        # --- Top Menu Bar ---
         self.menu = tk.Menu(self)
         self.config(menu=self.menu)
         
@@ -49,7 +54,7 @@ class I2Editor(tkinterdnd2.Tk):
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.quit)
         
-        # --- Top Toolbar Frame ---
+        # --- Top Toolbar Frame (for language selection and search) ---
         top_frame = ttk.Frame(self, padding="10")
         top_frame.pack(fill=tk.X)
 
@@ -60,6 +65,7 @@ class I2Editor(tkinterdnd2.Tk):
         self.language_combo.pack(side=tk.LEFT, padx=5)
         self.language_combo.bind("<<ComboboxSelected>>", self.on_language_change)
         
+        # --- Search and Replace Frame (aligned to the right) ---
         search_frame = ttk.Frame(top_frame, padding="10")
         search_frame.pack(side=tk.RIGHT)
         
@@ -74,20 +80,19 @@ class I2Editor(tkinterdnd2.Tk):
         ttk.Button(search_frame, text="Replace", command=self.replace_selected).grid(row=1, column=2, padx=5, pady=2)
         ttk.Button(search_frame, text="Replace All", command=self.replace_all).grid(row=1, column=3, padx=5, pady=2)
 
-        # Use a PanedWindow to split the interface
-        # This allows the user to resize the table and editor sections
+        # Use a PanedWindow to create a resizable split between the table and the editor.
         main_pane = ttk.PanedWindow(self, orient=tk.VERTICAL)
         main_pane.pack(expand=True, fill=tk.BOTH, padx=10, pady=(0, 10))
 
-        # --- Top Frame for the Treeview ---
+        # --- Top Frame for the Treeview (list of terms) ---
         tree_frame = ttk.Frame(main_pane, padding=(0, 10, 0, 0))
-        main_pane.add(tree_frame, weight=3) # Give the table more space by default
+        main_pane.add(tree_frame, weight=3) # Give the table more space by default.
         
         columns = ("#", "term", "text")
         self.tree = ttk.Treeview(tree_frame, columns=columns, show="headings")
         self.tree.heading("#", text="No.")
         self.tree.heading("term", text="Term Key")
-        self.tree.heading("text", text="Translation Text (Preview)") # Text changed to indicate it's a preview
+        self.tree.heading("text", text="Translation Text (Preview)")
         
         self.tree.column("#", width=50, anchor='center')
         self.tree.column("term", width=300)
@@ -99,16 +104,16 @@ class I2Editor(tkinterdnd2.Tk):
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
         
-        # Bind the treeview selection event
+        # Bind the selection event to update the text editor below.
         self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
 
-        # Create the bottom editor panel
+        # --- Bottom Frame for the full text editor ---
         editor_frame = ttk.LabelFrame(main_pane, text="Full Text Editor", padding="10")
-        main_pane.add(editor_frame, weight=1) # Give the editor less space by default
+        main_pane.add(editor_frame, weight=1) # Give the editor less space by default.
 
         self.editor_text = tk.Text(editor_frame, wrap="word", height=10, width=80, undo=True)
         self.editor_text.pack(expand=True, fill="both", side="left", padx=(0, 10))
-        self.editor_text.config(state="disabled") # Disable it until an item is selected
+        self.editor_text.config(state="disabled") # Disable until an item is selected.
 
         editor_scrollbar = ttk.Scrollbar(editor_frame, orient=tk.VERTICAL, command=self.editor_text.yview)
         self.editor_text.configure(yscrollcommand=editor_scrollbar.set)
@@ -121,19 +126,19 @@ class I2Editor(tkinterdnd2.Tk):
         self.status_bar = ttk.Label(self, text="Open an I2Languages JSON file to begin, or drag & drop a file here.", relief=tk.SUNKEN, anchor='w')
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
         
-        # Bind keyboard shortcuts
+        # --- Bind keyboard shortcuts ---
         self.bind("<Control-o>", lambda event: self.open_file_dialog())
         self.bind("<Control-s>", lambda event: self.save_file())
-        self.bind("<Control-S>", lambda event: self.save_file_as())
+        self.bind("<Control-S>", lambda event: self.save_file_as()) # Capital S for Shift+S
 
     def on_tree_select(self, event):
         """
-        When the user selects a row in the treeview, this function displays the full text
-        in the text editor below.
+        Called when a user selects a row in the treeview.
+        It populates the text editor with the full translation text for the selected term.
         """
         selected_items = self.tree.selection()
         if not selected_items:
-            # If nothing is selected, clear and disable the editor
+            # If nothing is selected (e.g., on clear), disable the editor.
             self.editor_text.config(state="normal")
             self.editor_text.delete("1.0", "end")
             self.editor_text.config(state="disabled")
@@ -141,44 +146,47 @@ class I2Editor(tkinterdnd2.Tk):
             self.currently_editing_term_key = None
             return
 
+        # Get the term key from the selected treeview item.
         item_id = selected_items[0]
         item_values = self.tree.item(item_id, "values")
         term_key = item_values[1]
         
-        # Get the full original text from the data, not from the treeview preview
+        # Get the full original text from our main data structure, not the treeview preview.
         lang_index = self._get_selected_language_index()
         original_index = self.term_to_original_index.get(term_key)
 
         if lang_index is None or original_index is None:
-            return # Something went wrong, do nothing
+            return # Exit if data is not ready.
 
         try:
             full_text = self.terms_list_ref[original_index]['Languages']['Array'][lang_index]
         except (KeyError, IndexError):
-            full_text = ""
+            full_text = "" # Handle cases where a translation is missing.
 
-        # Update the text editor
+        # Update the text editor widget.
         self.editor_text.config(state="normal")
         self.editor_text.delete("1.0", "end")
         self.editor_text.insert("1.0", full_text)
         self.save_button.config(state="normal")
-        self.currently_editing_term_key = term_key
+        self.currently_editing_term_key = term_key # Remember which term we are editing.
 
     def save_from_editor(self):
         """
-        Saves the text from the text editor into the data structure and updates the treeview.
+        Saves the text from the editor back into the main data structure and updates the treeview.
         """
         if not self.currently_editing_term_key:
             return
         
-        new_text = self.editor_text.get("1.0", "end-1c")
+        new_text = self.editor_text.get("1.0", "end-1c") # Get text, excluding the final newline.
         self.update_data_and_tree(self.currently_editing_term_key, new_text)
         self.status_bar.config(text=f"Saved changes for term: {self.currently_editing_term_key}")
 
-
     def on_drop(self, event):
+        """
+        Handles the file drop event. It cleans the file path and loads the file.
+        """
         try:
-            # The path might be wrapped in curly braces, so we clean it
+            # The event.data contains the file path, which might be wrapped in curly braces on Windows.
             filepath = self.tk.splitlist(event.data)[0]
             if filepath.startswith('{') and filepath.endswith('}'):
                 filepath = filepath[1:-1]
@@ -189,6 +197,9 @@ class I2Editor(tkinterdnd2.Tk):
             self.status_bar.config(text="Drag & drop failed.")
 
     def open_file_dialog(self):
+        """
+        Opens a standard file dialog to select a JSON file.
+        """
         filepath = filedialog.askopenfilename(
             title="Open I2Languages JSON File",
             filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
@@ -198,11 +209,14 @@ class I2Editor(tkinterdnd2.Tk):
         self.load_file_logic(filepath)
 
     def load_file_logic(self, filepath):
+        """
+        The core logic for loading and parsing the I2Languages JSON file.
+        """
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 self.data = json.load(f)
             
-            # Find the 'Array' of terms, which can be in a few different places
+            # The terms data can be in a few different nested structures. This code checks common locations.
             self.terms_list_ref = None
             if 'mSource' in self.data and isinstance(self.data.get('mSource'), dict) and 'mTerms' in self.data['mSource']:
                 self.terms_list_ref = self.data['mSource']['mTerms'].get('Array')
@@ -210,7 +224,7 @@ class I2Editor(tkinterdnd2.Tk):
                  self.terms_list_ref = self.data['mTerms'].get('Array')
             
             if self.terms_list_ref is None:
-                raise ValueError("Invalid I2Languages file structure. Could not find 'mTerms' data.")
+                raise ValueError("Invalid I2Languages file structure. Could not find the 'mTerms' array.")
 
             self.current_filepath = filepath
             
@@ -229,6 +243,9 @@ class I2Editor(tkinterdnd2.Tk):
             self.language_combo.set('')
 
     def detect_languages(self):
+        """
+        Detects the number of languages in the file and tries to identify English to set as the default.
+        """
         self.language_names = []
         self.detected_english_index = None
 
@@ -236,11 +253,11 @@ class I2Editor(tkinterdnd2.Tk):
             self.status_bar.config(text="Warning: File contains no terms.")
             return
 
-        # Assume all terms have the same number of languages
+        # Assume all terms have the same number of languages based on the first term.
         num_languages = len(self.terms_list_ref[0].get('Languages', {}).get('Array', []))
         self.language_names = [f"Language {i+1}" for i in range(num_languages)]
 
-        # Try to find English by looking for common, untranslated terms
+        # Try to find English by looking for common, untranslated terms like 'Cancel' or 'RUN'.
         search_terms = {'Cancel': 'Cancel', 'RUN': 'RUN', '3DMark/RUN': 'RUN'}
         found_english = False
         for term_key, english_value in search_terms.items():
@@ -252,39 +269,41 @@ class I2Editor(tkinterdnd2.Tk):
                             self.detected_english_index = j
                             found_english = True
                             break
-                if found_english:
-                    break
-            if found_english:
-                break
+                if found_english: break
+            if found_english: break
         
+        # Update the language combobox with the detected languages.
         self.language_combo.config(values=self.language_names, state="readonly")
         
         if self.detected_english_index is not None:
             self.language_var.set(self.language_names[self.detected_english_index])
-            self.status_bar.config(text=f"Detected {num_languages} languages. English (Language {self.detected_english_index + 1}) set as default.")
         elif self.language_names:
             self.language_var.set(self.language_names[0])
-            self.status_bar.config(text=f"Detected {num_languages} languages. English not found, defaulting to Language 1.")
         else:
              self.language_combo.config(state="disabled")
 
     def _get_selected_language_index(self):
+        """
+        Helper function to get the numerical index (0-based) from the selected language string (e.g., "Language 1").
+        """
         selected_lang_str = self.language_var.get()
         if not selected_lang_str:
             return None
         try:
-            # e.g., "Language 5" -> 4
             return int(selected_lang_str.split(' ')[1]) - 1
         except (IndexError, ValueError):
             return None
 
     def populate_treeview(self):
+        """
+        Clears and fills the treeview with data for the currently selected language.
+        """
         if not self.data or not self.terms_list_ref: return
         self.tree.delete(*self.tree.get_children())
         self.term_to_tree_item.clear()
         self.term_to_original_index.clear()
         
-        # Clear and disable the editor when reloading the table
+        # Clear and disable the editor when reloading the table.
         self.on_tree_select(None)
         
         lang_index = self._get_selected_language_index()
@@ -292,58 +311,63 @@ class I2Editor(tkinterdnd2.Tk):
             self.status_bar.config(text="Error: No language selected or invalid format.")
             return
 
-        for i, term_data in enumerate(self.terms_list_ref, 1):
+        for i, term_data in enumerate(self.terms_list_ref):
             term_key = term_data.get('Term', '[NO TERM KEY]')
             try:
                 full_translation = term_data.get('Languages', {}).get('Array', [])[lang_index]
             except IndexError:
                 full_translation = "[NO TEXT FOR THIS LANGUAGE]"
             
-            # Clean up the text for display in the treeview
-            # Replace newlines with spaces to keep it on a single line
+            # Clean up the text for display in the treeview (single line preview).
             display_translation = full_translation.replace('\n', ' ').replace('\r', ' ').strip()
             
-            item_id = self.tree.insert("", "end", values=(i, term_key, display_translation))
+            # Insert the row and store references for quick access later.
+            item_id = self.tree.insert("", "end", values=(i + 1, term_key, display_translation))
             self.term_to_tree_item[term_key] = item_id
-            self.term_to_original_index[term_key] = i - 1
+            self.term_to_original_index[term_key] = i
 
     def on_language_change(self, event=None):
+        """
+        Called when the user selects a different language from the combobox.
+        """
         self.populate_treeview()
         self.status_bar.config(text=f"Displaying language: {self.language_var.get()}")
 
     def update_data_and_tree(self, term_key, new_text):
+        """
+        Updates a term's translation both in the main data structure and in the treeview.
+        """
         if not self.data or not self.terms_list_ref: return
         
         lang_index = self._get_selected_language_index()
-        if lang_index is None: return
+        original_index = self.term_to_original_index.get(term_key)
 
-        original_index = self.term_to_original_index[term_key]
-        
-        # Ensure the language array is long enough
-        lang_array = self.terms_list_ref[original_index]['Languages']['Array']
-        while len(lang_array) <= lang_index:
-            lang_array.append("")
+        if lang_index is None or original_index is None: return
 
-        # Update the data in memory
-        lang_array[lang_index] = new_text
+        # Update the data in memory (the main JSON dictionary).
+        self.terms_list_ref[original_index]['Languages']['Array'][lang_index] = new_text
 
-        # Update the preview value in the treeview as well
+        # Update the preview value in the treeview as well.
         item_id = self.term_to_tree_item[term_key]
-        current_values = self.tree.item(item_id, "values")
-        row_number = current_values[0]
-        # Clean the new text for preview display
-        display_text = new_text.replace('\n', ' ').replace('\r', ' ').strip()
-        self.tree.item(item_id, values=(row_number, term_key, display_text))
+        current_values = list(self.tree.item(item_id, "values"))
+        current_values[2] = new_text.replace('\n', ' ').replace('\r', ' ').strip()
+        self.tree.item(item_id, values=tuple(current_values))
         
         self.status_bar.config(text=f"Updated term: {term_key}")
 
     def save_file(self):
+        """
+        Saves the current data to the existing file path.
+        """
         if not self.current_filepath:
             self.save_file_as()
         else:
             self._write_to_file(self.current_filepath)
 
     def save_file_as(self):
+        """
+        Opens a "Save As" dialog to save the current data to a new file.
+        """
         initial_filename = "I2Languages-resources.json"
         if self.current_filepath:
             initial_filename = self.current_filepath.split('/')[-1]
@@ -359,6 +383,9 @@ class I2Editor(tkinterdnd2.Tk):
         self.title(f"I2Languages Editor By MrGamesKingPro - {filepath.split('/')[-1]}")
 
     def _write_to_file(self, filepath):
+        """
+        The core logic for writing the JSON data to a file.
+        """
         if not self.data:
             messagebox.showwarning("No Data", "There is no data to save.")
             return
@@ -371,6 +398,10 @@ class I2Editor(tkinterdnd2.Tk):
             self.status_bar.config(text=f"Error saving file: {e}")
 
     def export_to_txt(self):
+        """
+        Exports the translations for the current language to a simple TXT file.
+        Each line is wrapped in quotes, with internal quotes escaped as "" to preserve data.
+        """
         if not self.data:
             messagebox.showwarning("No Data", "Please open a file first before exporting.")
             return
@@ -380,7 +411,6 @@ class I2Editor(tkinterdnd2.Tk):
         if not filepath: return
         try:
             with open(filepath, 'w', encoding='utf-8') as f:
-                # Export the full text from the original data
                 lang_index = self._get_selected_language_index()
                 if lang_index is None: return
 
@@ -388,13 +418,22 @@ class I2Editor(tkinterdnd2.Tk):
                     term_key = self.tree.item(item_id, "values")[1]
                     original_index = self.term_to_original_index[term_key]
                     full_text = self.terms_list_ref[original_index]['Languages']['Array'][lang_index]
-                    f.write(full_text + '\n')
+                    
+                    # Escape double quotes within the text and then wrap the entire string in quotes.
+                    # This prevents data loss if a translation contains a quote character.
+                    escaped_text = full_text.replace('"', '""')
+                    quoted_text = f'"{escaped_text}"'
+                    f.write(quoted_text + '\n')
 
             self.status_bar.config(text=f"Successfully exported to {filepath}")
         except Exception as e:
             messagebox.showerror("Export Error", f"Could not export file: {e}")
     
     def import_from_txt(self):
+        """
+        Imports translations from a TXT file, replacing the translations for the current language.
+        It correctly handles text that was exported with the quoting format.
+        """
         if not self.data:
             messagebox.showwarning("No Data", "Please open a file first before importing.")
             return
@@ -406,6 +445,8 @@ class I2Editor(tkinterdnd2.Tk):
             with open(filepath, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
             tree_items = self.tree.get_children()
+            
+            # Warn the user if the number of lines doesn't match the number of terms.
             if len(lines) != len(tree_items):
                 msg = (f"The number of lines in the text file ({len(lines)}) does not match "
                        f"the number of terms in the table ({len(tree_items)}).\n\n"
@@ -415,45 +456,53 @@ class I2Editor(tkinterdnd2.Tk):
             count = 0
             for item_id, new_line in zip(tree_items, lines):
                 term_key = self.tree.item(item_id, "values")[1]
-                # Text from file might contain trailing newlines, so we strip them
-                new_text = new_line.rstrip('\n\r')
+                
+                # Process the line to handle the special quoting format.
+                processed_line = new_line.rstrip('\n\r')
+                if processed_line.startswith('"') and processed_line.endswith('"'):
+                    # If it's a quoted string, remove outer quotes and un-escape inner quotes.
+                    new_text = processed_line[1:-1].replace('""', '"')
+                else:
+                    # For backward compatibility, if not quoted, use the line as is.
+                    new_text = processed_line
+                
                 self.update_data_and_tree(term_key, new_text)
                 count += 1
             
-            # Refresh the editor if an item is currently selected
-            self.on_tree_select(None) # Clear it first
+            # Refresh the editor if an item is currently selected to show the imported text.
             selected = self.tree.selection()
             if selected:
-                self.tree.event_generate("<<TreeviewSelect>>") # Re-trigger selection event
+                self.on_tree_select(None) # Trigger a fake de-select to clear the editor.
+                self.tree.selection_set(selected) # Re-select the item.
 
             self.status_bar.config(text=f"Successfully imported {count} lines from {filepath}")
         except Exception as e:
             messagebox.showerror("Import Error", f"Could not import file: {e}")
 
     def find_next(self):
+        """
+        Finds the next occurrence of the search query in the full translation text.
+        """
         query = self.search_entry.get()
         if not query: return
         
         all_items = self.tree.get_children()
         if not all_items: return
 
-        # Start search from the item after the currently selected one
+        # Start search from the item AFTER the currently selected one.
         selected_item = self.tree.focus()
         start_index = 0
         if selected_item:
-            try:
-                start_index = self.tree.index(selected_item) + 1
-            except ValueError: # Should not happen if item is focused
-                start_index = 0
+            start_index = self.tree.index(selected_item) + 1
 
-        # Create a re-ordered list to search from start_index to end, then wrap around
+        # Create a re-ordered list to search from the start_index to the end, then wrap around to the beginning.
         items_to_search = all_items[start_index:] + all_items[:start_index]
 
         lang_index = self._get_selected_language_index()
         if lang_index is None: return
 
         for item in items_to_search:
-            # Search in the full text, not just the preview
+            # Search in the full text from the data source, not just the treeview preview.
             term_key = self.tree.item(item, "values")[1]
             original_index = self.term_to_original_index[term_key]
             full_text = self.terms_list_ref[original_index]['Languages']['Array'][lang_index]
@@ -461,7 +510,7 @@ class I2Editor(tkinterdnd2.Tk):
             if query.lower() in full_text.lower():
                 self.tree.selection_set(item)
                 self.tree.focus(item)
-                self.tree.see(item) # Scroll to the item
+                self.tree.see(item) # Scroll to make the found item visible.
                 self.status_bar.config(text=f"Found '{query}'")
                 return
         
@@ -469,19 +518,21 @@ class I2Editor(tkinterdnd2.Tk):
         messagebox.showinfo("Search Finished", f"No more occurrences of '{query}' were found.")
 
     def replace_selected(self):
-        selected_item = self.tree.focus()
-        if not selected_item:
+        """
+        Replaces the first occurrence of the search query within the text editor for the selected row.
+        This does NOT save the change; the user must click "Save Changes".
+        """
+        if not self.tree.focus():
             messagebox.showinfo("Info", "Please select a row to replace.")
             return
 
-        # Replacement now happens directly in the text editor widget
         query = self.search_entry.get()
         replace_with = self.replace_entry.get()
+        
         if not query or self.editor_text.cget("state") == "disabled":
-            messagebox.showinfo("Info", "Please select a row and enter a search term.")
             return
 
-        # Replace only the first occurrence in the editor's current text
+        # Replace only the first occurrence (count=1) in the editor's current text, case-insensitively.
         current_text = self.editor_text.get("1.0", "end-1c")
         new_text, count = re.subn(re.escape(query), replace_with, current_text, count=1, flags=re.IGNORECASE)
         
@@ -493,6 +544,10 @@ class I2Editor(tkinterdnd2.Tk):
             self.status_bar.config(text="Search text not found in the editor for the selected row.")
 
     def replace_all(self):
+        """
+        Replaces ALL occurrences of the search query in ALL terms for the current language.
+        This action is permanent and saves directly to the data.
+        """
         query = self.search_entry.get()
         replace_with = self.replace_entry.get()
         if not query:
@@ -507,22 +562,25 @@ class I2Editor(tkinterdnd2.Tk):
         if lang_index is None: return
 
         for item_id in self.tree.get_children():
-            values = self.tree.item(item_id, "values")
-            term_key = values[1]
+            term_key = self.tree.item(item_id, "values")[1]
             
-            # Get the full text, perform the replacement, then update
+            # Get the full text, perform the replacement, and then update.
             original_index = self.term_to_original_index[term_key]
             old_text = self.terms_list_ref[original_index]['Languages']['Array'][lang_index]
 
+            # Use re.subn which returns the new string and the number of substitutions made.
             new_text, num_replacements = re.subn(re.escape(query), replace_with, old_text, flags=re.IGNORECASE)
 
             if num_replacements > 0:
                 self.update_data_and_tree(term_key, new_text)
                 count += num_replacements
         
-        # Refresh the editor if the currently edited item was changed
+        # Refresh the editor if the currently edited item was changed during the "replace all".
         if self.currently_editing_term_key:
-            self.tree.event_generate("<<TreeviewSelect>>")
+            selected = self.tree.selection()
+            if selected:
+                self.on_tree_select(None)
+                self.tree.selection_set(selected)
 
         self.status_bar.config(text=f"Replaced {count} occurrence(s) in total.")
         messagebox.showinfo("Replace All", f"Finished. Replaced {count} occurrence(s).")
